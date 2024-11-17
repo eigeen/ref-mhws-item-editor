@@ -1,3 +1,7 @@
+-- ========== 用户自定义配置 ==========
+local FONT_SCALE = 1.2
+local FONT_NAME = "SourceHanSansCN-Regular.otf"
+
 -- ========== 常量和结构定义 ==========
 ---@class ItemSource
 local ItemSource = {
@@ -10,8 +14,9 @@ local ItemSource = {
 ---@field name string
 
 local REPOSITORY = "https://github.com/eigeen/ref-mhws-item-editor"
-local VERSION = "1.0.0"
+local VERSION = "1.0.1"
 local AUTHOR = "eigeen"
+local DESCRIPTION = "当前为实验性版本，遇到语言问题尝试重载插件。在上面的仓库里获取最新版。"
 
 -- ========== 全局变量 ==========
 
@@ -19,7 +24,8 @@ local g_editor_open = false
 local g_item_source = ItemSource.Pouch
 ---@type table<app.ItemDef.ID_Fixed, ItemDefinition>
 local g_item_definitions = {}
-local g_font = imgui.load_font("SourceHanSansCN-Regular.otf", 20, {0x0020, 0xE007F, 0})
+local g_rem = imgui.get_default_font_size() * FONT_SCALE
+local g_font = imgui.load_font(FONT_NAME, g_rem, {0x0020, 0xE007F, 0})
 
 -- ========== 初始化 ==========
 
@@ -243,6 +249,7 @@ local function draw_item_editor()
     imgui.text("Version: " .. VERSION)
     imgui.text("Author: " .. AUTHOR)
     imgui.text("Repository: " .. REPOSITORY)
+    imgui.text("Description: " .. DESCRIPTION)
 
     -- 当前道具栏显示
     if imgui.tree_node("Edit Items") then
