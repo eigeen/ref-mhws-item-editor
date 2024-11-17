@@ -1,8 +1,10 @@
 -- ========== 用户自定义配置 ==========
+--
 local FONT_SCALE = 1.2
 local FONT_NAME = "SourceHanSansCN-Regular.otf"
 
 -- ========== 常量和结构定义 ==========
+--
 ---@class ItemSource
 local ItemSource = {
     Pouch = 1,
@@ -13,26 +15,29 @@ local ItemSource = {
 ---@field fixed_id integer
 ---@field name string
 
+---@class Task
+---@field cb fun (...)
+---@field args any[]
+
 local REPOSITORY = "https://github.com/eigeen/ref-mhws-item-editor"
-local VERSION = "1.0.1"
+local VERSION = "1.0.2+1"
 local AUTHOR = "eigeen"
-local DESCRIPTION = "当前为实验性版本，遇到语言问题尝试重载插件。在上面的仓库里获取最新版。"
+local DESCRIPTION =
+    "当前为实验性版本，可能遇到任何bug，报错请重载插件（不是重启游戏）。在上面的仓库里获取最新版。"
 
 -- ========== 全局变量 ==========
 
 local g_editor_open = false
 local g_item_source = ItemSource.Pouch
----@type table<app.ItemDef.ID_Fixed, ItemDefinition>
-local g_item_definitions = {}
 local g_rem = imgui.get_default_font_size() * FONT_SCALE
 local g_font = imgui.load_font(FONT_NAME, g_rem, {0x0020, 0xE007F, 0})
 
--- ========== 初始化 ==========
+-- ========== 游戏内结构缓存初始化 ==========
 
 ---@type app.SaveDataManager
 local app_SaveDataManager = sdk.get_managed_singleton("app.SaveDataManager")
----@type app.user_data.VariousDataManagerSetting
-local various_data_manager_setting = sdk.get_managed_singleton("app.VariousDataManager"):get_Setting()
+---@type app.VariousDataManager
+local various_data_manager_setting = sdk.get_managed_singleton("app.VariousDataManager")
 ---@type via.gui.message
 local via_gui_message = sdk.find_type_definition("via.gui.message")
 local get_name_fn = via_gui_message:get_method("get(System.Guid)")
@@ -52,32 +57,11 @@ local function get_name(guid)
     return tostring(result)
 end
 
-local item_setting = various_data_manager_setting:get_Item()
-
-local item_data = item_setting:get_ItemData()
-
-local item_values = item_data:getValues()
-local item_len = item_data:getDataNum()
-
-for i = 0, item_len - 1 do
-    ---@type app.user_data.ItemData.cData
-    local item_value = item_values[i]
-    local name_id = item_value:get_RawName()
-
-    local name = get_name(name_id)
-    ---@type app.ItemDef.ID_Fixed
-    local fixed_id = item_value:get_ItemId()
-
-    g_item_definitions[fixed_id] = {
-        fixed_id = fixed_id,
-        name = name
-    }
-end
-
 -- ========== 工具方法 ==========
 
 ---@class ItemHelper
 local ItemHelper = {
+    item_definitions = nil,
     item_works = {},
     combo_items_all = nil
 }
@@ -87,23 +71,72 @@ function ItemHelper:update()
     self:update_item_works()
 end
 
+-- 更新当前道具列表
 function ItemHelper:update_item_works()
-    local app_savedata_cUserSaveParam = app_SaveDataManager:getCurrentUserSaveData()
-    local app_savedata_cItemParam = app_savedata_cUserSaveParam:get_Item()
+    local app_savedata_cItemParam = self:get_citem_param()
 
     self.item_works[ItemSource.Pouch] = app_savedata_cItemParam:get_PouchItem()
     self.item_works[ItemSource.Box] = app_savedata_cItemParam:get_BoxItem()
+end
+
+--- 初始化物品定义
+--- 在使用时第一次调用，防止过早初始化丢失一些对象和语言设置
+function ItemHelper:init_item_definitions()
+    local item_setting = various_data_manager_setting:get_Setting():get_Item()
+
+    local item_data = item_setting:get_ItemData()
+
+    local item_values = item_data:getValues()
+    local item_len = item_data:getDataNum()
+
+    self.item_definitions = {}
+
+    for i = 0, item_len - 1 do
+        ---@type app.user_data.ItemData.cData
+        local item_value = item_values[i]
+        local name_id = item_value:get_RawName()
+
+        local name = get_name(name_id)
+        ---@type app.ItemDef.ID_Fixed
+        local fixed_id = item_value:get_ItemId()
+
+        self.item_definitions[fixed_id] = {
+            fixed_id = fixed_id,
+            name = name
+        }
+    end
+end
+
+---@return app.savedata.cItemParam
+function ItemHelper:get_citem_param()
+    local app_savedata_cUserSaveParam = app_SaveDataManager:getCurrentUserSaveData()
+    local app_savedata_cItemParam = app_savedata_cUserSaveParam:get_Item()
+
+    return app_savedata_cItemParam
+end
+
+---@return app.savedata.cBasicParam
+function ItemHelper:get_cbasic_param()
+    local app_savedata_cUserSaveParam = app_SaveDataManager:getCurrentUserSaveData()
+    local app_savedata_cBasicParam = app_savedata_cUserSaveParam:get_BasicData()
+
+    return app_savedata_cBasicParam
+end
+
+---@return table<app.ItemDef.ID_Fixed, ItemDefinition>
+function ItemHelper:get_item_definitions()
+    if not self.item_definitions then
+        self:init_item_definitions()
+    end
+
+    return self.item_definitions
 end
 
 --- 获取当前道具列表
 ---@param item_source ItemSource
 ---@return table<integer, app.savedata.cItemWork>
 function ItemHelper:get_current_items(item_source)
-    local app_savedata_cUserSaveParam = app_SaveDataManager:getCurrentUserSaveData()
-    local app_savedata_cItemParam = app_savedata_cUserSaveParam:get_Item()
-
     local item_works = self.item_works[item_source]
-
     if not item_works then
         return {}
     end
@@ -111,28 +144,14 @@ function ItemHelper:get_current_items(item_source)
     return item_works
 end
 
---- 获取当前道具
----@param item_source ItemSource
----@param item_id app.ItemDef.ID
----@return app.savedata.cItemWork | nil
-function ItemHelper:get_current_item_by_id(item_source, id)
-    local itemWorks = self:get_current_items(item_source)
-
-    for _, itemWork in pairs(itemWorks) do
-        if itemWork:get_ItemId() == item_id then
-            return itemWork
-        end
-    end
-
-    return nil
-end
-
 --- 通过FixedID查找物品定义
 ---@param fixed_id app.ItemDef.ID_Fixed
 ---@return ItemDefinition | nil
-function ItemHelper:get_item_definition(fixed_id)
-    if g_item_definitions[fixed_id] then
-        return g_item_definitions[fixed_id]
+function ItemHelper:get_item_definition_by_id(fixed_id)
+    local item_definitions = self:get_item_definitions()
+
+    if item_definitions[fixed_id] then
+        return item_definitions[fixed_id]
     end
 
     return nil
@@ -149,6 +168,7 @@ function ItemHelper:create_combo_item_name(fixed_id, name)
     return tostring(fixed_id) .. " " .. name
 end
 
+-- 获取Combo容器的内容列表
 function ItemHelper:get_combo_items_all()
     if self.combo_items_all then
         return self.combo_items_all
@@ -156,7 +176,7 @@ function ItemHelper:get_combo_items_all()
 
     local combo_items = {}
 
-    for _, item_def in pairs(g_item_definitions) do
+    for _, item_def in pairs(self:get_item_definitions()) do
         combo_items[item_def.fixed_id] = self:create_combo_item_name(item_def.fixed_id, item_def.name)
     end
 
@@ -175,6 +195,49 @@ function ItemHelper:get_combo_items_all()
     self.combo_items_all = combo_items
 
     return combo_items
+end
+
+---@class TaskTable @发送到主线程执行的任务
+local TaskTable = {}
+TaskTable.__index = TaskTable
+
+function TaskTable:push(task_fn, ...)
+    table.insert(self, {
+        cb = task_fn,
+        args = {...}
+    })
+end
+
+---@return Task
+function TaskTable:pop()
+    return table.remove(self, 1)
+end
+
+function TaskTable:is_empty()
+    return #self == 0
+end
+
+---@return integer
+function TaskTable:size()
+    return #self
+end
+
+---@param cbasic_param app.savedata.cBasicParam
+---@param delta integer
+local function task_add_money(cbasic_param, delta)
+    cbasic_param:addMoney(delta, true)
+end
+
+---@param cbasic_param app.savedata.cBasicParam
+---@param delta integer
+local function task_add_point(cbasic_param, delta)
+    cbasic_param:addPoint(delta, true)
+end
+
+---@param cbasic_param app.savedata.cBasicParam
+---@param delta integer
+local function task_add_hunter_point(cbasic_param, delta)
+    cbasic_param:addHunterPoint(delta)
 end
 
 -- ========== 绘制方法 ==========
@@ -206,7 +269,7 @@ local function draw_item_list()
     imgui.table_headers_row()
 
     for key, itemWork in pairs(items) do
-        local item_def = ItemHelper:get_item_definition(ItemHelper:id_to_fixed_id(itemWork:get_ItemId()))
+        local item_def = ItemHelper:get_item_definition_by_id(ItemHelper:id_to_fixed_id(itemWork:get_ItemId()))
         if not item_def then
             -- 忽略无定义的物品
             return
@@ -227,9 +290,8 @@ local function draw_item_list()
         end
 
         imgui.table_set_column_index(1)
-        imgui.push_item_width(60)
-        local changed, value = imgui.drag_int("##drag_int__" .. tostring(item_def.fixed_id), itemWork.Num, 1, 0, 1000,
-            "%d")
+        imgui.push_item_width(6 * g_rem)
+        local changed, value = imgui.drag_int("##drag_int__" .. key, itemWork.Num, 1, 0, 1000, "%d")
         if changed then
             itemWork.Num = value
         end
@@ -251,11 +313,11 @@ local function draw_item_editor()
     imgui.text("Repository: " .. REPOSITORY)
     imgui.text("Description: " .. DESCRIPTION)
 
-    -- 当前道具栏显示
+    -- 当前道具栏模块
     if imgui.tree_node("Edit Items") then
         -- 物品来源选择 道具袋/道具箱等
         -- 模拟实现radio button
-        imgui.text("Countainer")
+        imgui.text("Container")
         local changed, value = imgui.checkbox("Pouch", g_item_source == ItemSource.Pouch)
         if changed and value then
             g_item_source = ItemSource.Pouch
@@ -267,6 +329,34 @@ local function draw_item_editor()
         end
 
         draw_item_list()
+
+        imgui.tree_pop()
+    end
+
+    -- 猎人数据修改模块
+    if imgui.tree_node("Edit Hunter Data") then
+        local cbasic_param = ItemHelper:get_cbasic_param()
+        local money = cbasic_param:getMoney()
+        local point = cbasic_param:getPoint()
+        local total_point = cbasic_param:getTotalPoint()
+
+        imgui.text("Money")
+        imgui.same_line()
+        imgui.push_item_width(12 * g_rem)
+        local changed, new_value = imgui.drag_int("##drag_int__money", money, 100, 0, 99999999, "%d")
+        if changed then
+            local delta = new_value - money
+            TaskTable:push(task_add_money, cbasic_param, delta)
+        end
+
+        imgui.text("Point")
+        imgui.same_line()
+        imgui.push_item_width(12 * g_rem)
+        local changed, new_value = imgui.drag_int("##drag_int__point", point, 100, 0, 99999999, "%d")
+        if changed then
+            local delta = new_value - point
+            TaskTable:push(task_add_point, cbasic_param, delta)
+        end
 
         imgui.tree_pop()
     end
@@ -300,4 +390,16 @@ re.on_draw_ui(function()
     end
 
     imgui.pop_font(g_font)
+end)
+
+-- 在主线程处理部分数据操作事件，否则会引起崩溃
+sdk.hook(sdk.find_type_definition("app.GUIManager"):get_method("updateApp"), function(args)
+    local task = TaskTable:pop()
+    if task then
+        local cb = task['cb']
+        local args = task['args']
+
+        cb(table.unpack(args))
+    end
+end, function(retval)
 end)
