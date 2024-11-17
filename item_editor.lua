@@ -20,7 +20,7 @@ local ItemSource = {
 ---@field args any[]
 
 local REPOSITORY = "https://github.com/eigeen/ref-mhws-item-editor"
-local VERSION = "1.0.2+1"
+local VERSION = "1.0.2+2"
 local AUTHOR = "eigeen"
 local DESCRIPTION =
     "当前为实验性版本，可能遇到任何bug，报错请重载插件（不是重启游戏）。在上面的仓库里获取最新版。"
@@ -232,12 +232,6 @@ end
 ---@param delta integer
 local function task_add_point(cbasic_param, delta)
     cbasic_param:addPoint(delta, true)
-end
-
----@param cbasic_param app.savedata.cBasicParam
----@param delta integer
-local function task_add_hunter_point(cbasic_param, delta)
-    cbasic_param:addHunterPoint(delta)
 end
 
 -- ========== 绘制方法 ==========
