@@ -20,7 +20,7 @@ local ItemSource = {
 ---@field args any[]
 
 local REPOSITORY = "https://github.com/eigeen/ref-mhws-item-editor"
-local VERSION = "1.0.2+2"
+local VERSION = "1.0.2+3"
 local AUTHOR = "eigeen"
 local DESCRIPTION =
     "当前为实验性版本，可能遇到任何bug，报错请重载插件（不是重启游戏）。在上面的仓库里获取最新版。"
@@ -34,16 +34,49 @@ local g_font = imgui.load_font(FONT_NAME, g_rem, {0x0020, 0xE007F, 0})
 
 -- ========== 游戏内结构缓存初始化 ==========
 
----@type app.SaveDataManager
-local app_SaveDataManager = sdk.get_managed_singleton("app.SaveDataManager")
----@type app.VariousDataManager
-local various_data_manager_setting = sdk.get_managed_singleton("app.VariousDataManager")
+local LazyStaticState = {
+    Uninitialized = 0,
+    Initialized = 1
+}
+
+---@class LazyStatic
+local LazyStatic = {}
+LazyStatic.__index = LazyStatic
+
+function LazyStatic.new(init_fn)
+    local obj = setmetatable({}, LazyStatic)
+    obj.init_fn = init_fn
+    obj.state = LazyStaticState.Uninitialized
+    obj.inner_value = nil
+    return obj
+end
+
+function LazyStatic:value()
+    if self.state == LazyStaticState.Uninitialized then
+        local init_fn = self.init_fn
+        self.inner_value = init_fn()
+        self.state = LazyStaticState.Initialized
+    end
+
+    return self.inner_value
+end
+
+---@type LazyStatic<app.SaveDataManager>
+local lz_app_SaveDataManager = LazyStatic.new(function()
+    return sdk.get_managed_singleton("app.SaveDataManager")
+end)
+---@type LazyStatic<app.VariousDataManager>
+local lz_various_data_manager_setting = LazyStatic.new(function()
+    return sdk.get_managed_singleton("app.VariousDataManager")
+end)
 ---@type via.gui.message
 local via_gui_message = sdk.find_type_definition("via.gui.message")
 local get_name_fn = via_gui_message:get_method("get(System.Guid)")
 ---@type app.ItemDef
 local app_ItemDef = sdk.find_type_definition("app.ItemDef")
 local item_id_fn = app_ItemDef:get_method("ItemId(app.ItemDef.ID)")
+
+-- ========== 工具方法 ==========
 
 --- 获取名称
 ---@param guid System.Guid
@@ -56,8 +89,6 @@ local function get_name(guid)
 
     return tostring(result)
 end
-
--- ========== 工具方法 ==========
 
 ---@class ItemHelper
 local ItemHelper = {
@@ -82,7 +113,7 @@ end
 --- 初始化物品定义
 --- 在使用时第一次调用，防止过早初始化丢失一些对象和语言设置
 function ItemHelper:init_item_definitions()
-    local item_setting = various_data_manager_setting:get_Setting():get_Item()
+    local item_setting = lz_various_data_manager_setting:value():get_Setting():get_Item()
 
     local item_data = item_setting:get_ItemData()
 
@@ -109,7 +140,7 @@ end
 
 ---@return app.savedata.cItemParam
 function ItemHelper:get_citem_param()
-    local app_savedata_cUserSaveParam = app_SaveDataManager:getCurrentUserSaveData()
+    local app_savedata_cUserSaveParam = lz_app_SaveDataManager:value():getCurrentUserSaveData()
     local app_savedata_cItemParam = app_savedata_cUserSaveParam:get_Item()
 
     return app_savedata_cItemParam
@@ -117,7 +148,7 @@ end
 
 ---@return app.savedata.cBasicParam
 function ItemHelper:get_cbasic_param()
-    local app_savedata_cUserSaveParam = app_SaveDataManager:getCurrentUserSaveData()
+    local app_savedata_cUserSaveParam = lz_app_SaveDataManager:value():getCurrentUserSaveData()
     local app_savedata_cBasicParam = app_savedata_cUserSaveParam:get_BasicData()
 
     return app_savedata_cBasicParam
